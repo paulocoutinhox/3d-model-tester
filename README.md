@@ -2,6 +2,10 @@
 
 A simple Three.js application for testing 3D models with animations. This project allows you to quickly load and visualize your character models in a 3D environment with basic movement and animation controls.
 
+## Demo
+
+Try the live demo: [3d-model-tester.netlify.app](https://3d-model-tester.netlify.app)
+
 ## Features
 
 - Real-time 3D rendering with Three.js
