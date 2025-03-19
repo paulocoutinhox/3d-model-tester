@@ -102,7 +102,7 @@ If your model doesn't appear or animate correctly:
 
 ## Screenshot
 
-<img width="280" src="https://github.com/paulocoutinhox/3d-model-tester/blob/main/extras/images/screenshot.png?raw=true">
+<img width="300" src="https://github.com/paulocoutinhox/3d-model-tester/blob/main/extras/images/screenshot.png?raw=true">
 
 ## License
 
