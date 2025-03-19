@@ -87,8 +87,12 @@ const playerState = {
     velocity: new THREE.Vector3(0, 0, 0),
     currentAnimation: 'IDLE',
     moveSpeed: 5,
+    runSpeed: 10,
     rotationSpeed: 3,
-    isAttacking: false
+    isAttacking: false,
+    isJumping: false,
+    jumpHeight: 3,
+    jumpSpeed: 5
 };
 
 const enemyState = {
@@ -108,11 +112,15 @@ const animationMap = {
     player: {
         IDLE: { clip: null, duration: 0 },
         WALK: { clip: null, duration: 0 },
+        RUN: { clip: null, duration: 0 },
+        JUMP: { clip: null, duration: 0 },
         ATTACK: { clip: null, duration: 0 }
     },
     enemy: {
         IDLE: { clip: null, duration: 0 },
         WALK: { clip: null, duration: 0 },
+        RUN: { clip: null, duration: 0 },
+        JUMP: { clip: null, duration: 0 },
         ATTACK: { clip: null, duration: 0 }
     }
 };
@@ -340,7 +348,9 @@ const keys = {
     a: false,
     s: false,
     d: false,
-    space: false
+    space: false,
+    shift: false,
+    f: false
 };
 
 window.addEventListener('keydown', (e) => {
@@ -351,7 +361,15 @@ window.addEventListener('keydown', (e) => {
         case 'd': keys.d = true; break;
         case ' ':
             keys.space = true;
-            if (!playerState.isAttacking) {
+            // Only try to jump if not already jumping and not attacking
+            if (!playerState.isJumping && !playerState.isAttacking) {
+                performJump('player');
+            }
+            break;
+        case 'shift': keys.shift = true; break;
+        case 'f':
+            keys.f = true;
+            if (!playerState.isAttacking && !playerState.isJumping) {
                 performAttack('player');
             }
             break;
@@ -365,12 +383,14 @@ window.addEventListener('keyup', (e) => {
         case 's': keys.s = false; break;
         case 'd': keys.d = false; break;
         case ' ': keys.space = false; break;
+        case 'shift': keys.shift = false; break;
+        case 'f': keys.f = false; break;
     }
 });
 
-// Add mouse click for attack
+// Update mouse click for attack
 window.addEventListener('click', () => {
-    if (!playerState.isAttacking) {
+    if (!playerState.isAttacking && !playerState.isJumping) {
         performAttack('player');
     }
 });
@@ -395,13 +415,22 @@ window.addEventListener('resize', handleWindowResize);
 // Animation handling
 function setAnimation(character, animationName) {
     if (character === 'player') {
-        debugLog(`Setting player animation to ${animationName}`);
+        debugLog(`Requested animation: ${animationName}`);
     }
 
     const info = character === 'player' ?
-        { state: playerState, animations: playerAnimations } :
-        { state: enemyState, animations: enemyAnimations };
+        { state: playerState, animations: playerAnimations, mixer: playerMixer } :
+        { state: enemyState, animations: enemyAnimations, mixer: enemyMixer };
 
+    // If animation doesn't exist, do nothing
+    if (!info.animations[animationName]) {
+        if (character === 'player') {
+            debugLog(`Animation ${animationName} not found - ignoring request`);
+        }
+        return;
+    }
+
+    // If we're already playing this animation, don't do anything
     if (info.state.currentAnimation === animationName) {
         if (character === 'player') {
             debugLog(`Animation ${animationName} already playing, skipping`);
@@ -409,27 +438,32 @@ function setAnimation(character, animationName) {
         return;
     }
 
-    // Fade out current animation
-    if (info.animations[info.state.currentAnimation]) {
+    // First stop all current animations
+    if (info.mixer) {
+        info.mixer.stopAllAction();
         if (character === 'player') {
-            debugLog(`Fading out current animation: ${info.state.currentAnimation}`);
+            debugLog(`Stopped all animations before playing ${animationName}`);
         }
-        info.animations[info.state.currentAnimation].fadeOut(0.2);
-    } else if (character === 'player') {
-        debugLog(`No current animation to fade out`);
     }
 
-    // Fade in new animation
-    if (info.animations[animationName]) {
-        if (character === 'player') {
-            debugLog(`Fading in new animation: ${animationName}`);
-        }
-        info.animations[animationName].reset();
-        info.animations[animationName].fadeIn(0.2);
-        info.animations[animationName].play();
-        info.state.currentAnimation = animationName;
-    } else if (character === 'player') {
-        debugLog(`WARNING: Animation ${animationName} not found`);
+    // Configure the animation
+    if (animationName === 'ATTACK' || animationName === 'JUMP') {
+        info.animations[animationName].setLoop(THREE.LoopOnce);
+        info.animations[animationName].clampWhenFinished = true;
+    } else {
+        info.animations[animationName].setLoop(THREE.LoopRepeat, Infinity);
+    }
+
+    // Make sure animation has proper weight
+    info.animations[animationName].setEffectiveWeight(1.0);
+
+    // Play the animation
+    info.animations[animationName].reset();
+    info.animations[animationName].play();
+    info.state.currentAnimation = animationName;
+
+    if (character === 'player') {
+        debugLog(`Now playing ${animationName} animation`);
     }
 }
 
@@ -438,21 +472,40 @@ function performAttack(character) {
         { state: playerState, animations: playerAnimations, map: animationMap.player } :
         { state: enemyState, animations: enemyAnimations, map: animationMap.enemy };
 
+    // If attack animation doesn't exist, don't do anything
+    if (!info.animations.ATTACK) {
+        if (character === 'player') {
+            debugLog(`Cannot perform attack - no ATTACK animation exists`);
+        }
+        return;
+    }
+
     info.state.isAttacking = true;
     setAnimation(character, 'ATTACK');
+
+    // Use animation duration if available, otherwise default to 1 second
+    const attackDuration = info.map.ATTACK.duration > 0 ?
+        info.map.ATTACK.duration : 1.0;
 
     // Reset to IDLE after attack animation completes
     setTimeout(() => {
         info.state.isAttacking = false;
-        setAnimation(character, 'IDLE');
-    }, info.map.ATTACK.duration * 1000);
+        // Only try to set IDLE if it exists
+        if (info.animations.IDLE) {
+            setAnimation(character, 'IDLE');
+        }
+    }, attackDuration * 1000);
 }
 
 // Player movement and camera following
 function updatePlayer(deltaTime) {
-    if (playerState.isAttacking || !playerModel) return;
+    if (!playerModel) return;
+
+    // If attacking and not jumping, don't process movement
+    if (playerState.isAttacking && !playerState.isJumping) return;
 
     let moving = false;
+    let running = false;
 
     // Rotate with A/D keys
     if (keys.a) {
@@ -465,9 +518,44 @@ function updatePlayer(deltaTime) {
     // Store the current rotation
     playerState.rotation.y = playerModel.rotation.y;
 
+    // Handle jumping (vertical movement)
+    if (playerState.isJumping) {
+        // Apply gravity to vertical movement
+        playerState.velocity.y -= 9.8 * deltaTime;
+
+        // Update vertical position
+        playerState.position.y += playerState.velocity.y * deltaTime;
+
+        // Check if player has returned to the ground
+        if (playerState.position.y <= 0) {
+            playerState.position.y = 0;
+            playerState.velocity.y = 0;
+            playerState.isJumping = false;
+            debugLog("Player landed on the ground");
+
+            // Return to IDLE or WALK/RUN animation depending on if moving
+            if (keys.w || keys.s) {
+                moving = true;
+                running = keys.shift;
+
+                if (running && playerAnimations.RUN) {
+                    setAnimation('player', 'RUN');
+                } else if (playerAnimations.WALK) {
+                    setAnimation('player', 'WALK');
+                }
+            } else if (playerAnimations.IDLE) {
+                setAnimation('player', 'IDLE');
+            }
+        }
+
+        // Update the vertical position of the model
+        playerModel.position.y = playerState.position.y;
+    }
+
     // Move forward/backward with W/S keys
     if (keys.w || keys.s) {
         moving = true;
+        running = keys.shift;
 
         // Calculate forward direction based on current rotation
         const direction = keys.w ? -1 : 1; // Inverted to fix the backward/forward issue
@@ -476,34 +564,49 @@ function updatePlayer(deltaTime) {
         const forwardX = -Math.sin(playerModel.rotation.y);
         const forwardZ = -Math.cos(playerModel.rotation.y);
 
+        // Determine speed based on running or walking
+        const currentSpeed = running ? playerState.runSpeed : playerState.moveSpeed;
+
         // Move player in the direction they're facing
-        playerState.velocity.x = forwardX * playerState.moveSpeed * direction;
-        playerState.velocity.z = forwardZ * playerState.moveSpeed * direction;
+        playerState.velocity.x = forwardX * currentSpeed * direction;
+        playerState.velocity.z = forwardZ * currentSpeed * direction;
 
         // Calculate new position
         const newPosX = playerState.position.x + playerState.velocity.x * deltaTime;
         const newPosZ = playerState.position.z + playerState.velocity.z * deltaTime;
 
-        // Simple collision detection with the tree
-        const treeRadius = 4; // Approximate radius of tree base
+        // Define map boundaries (half-width and half-depth of the ground plane)
+        const mapBoundary = 25;
+
+        // Simple collision detection with the tree - ADJUSTING RADIUS TO MATCH TRUNK SIZE
+        const treeRadius = 0.7;
         const distanceToTree = Math.sqrt(newPosX * newPosX + newPosZ * newPosZ);
 
-        // Only update position if not colliding with tree
-        if (distanceToTree > treeRadius) {
+        // Only update position if not colliding with tree AND within map boundaries
+        if (distanceToTree > treeRadius &&
+            Math.abs(newPosX) < mapBoundary &&
+            Math.abs(newPosZ) < mapBoundary) {
             playerState.position.x = newPosX;
             playerState.position.z = newPosZ;
-            playerModel.position.copy(playerState.position);
+            playerModel.position.x = playerState.position.x;
+            playerModel.position.z = playerState.position.z;
         }
     }
 
-    // Update animation
-    if (moving) {
-        setAnimation('player', 'WALK');
-    } else {
-        setAnimation('player', 'IDLE');
+    // Update animation only if we have the needed animations and not jumping or attacking
+    if (!playerState.isJumping && !playerState.isAttacking) {
+        if (moving) {
+            if (running && playerAnimations.RUN) {
+                setAnimation('player', 'RUN');
+            } else if (playerAnimations.WALK) {
+                setAnimation('player', 'WALK');
+            }
+        } else if (playerAnimations.IDLE) {
+            setAnimation('player', 'IDLE');
+        }
     }
 
-    // Update camera position to follow player
+    // Update camera position to follow player - adjusted to consider vertical position
     const cameraOffsetX = -Math.sin(playerModel.rotation.y) * 10;
     const cameraOffsetZ = -Math.cos(playerModel.rotation.y) * 10;
 
@@ -554,16 +657,21 @@ function updateEnemy(deltaTime) {
         enemyState.velocity.x = forwardX * enemyState.moveSpeed * -1;
         enemyState.velocity.z = forwardZ * enemyState.moveSpeed * -1;
 
-        // Calculate new position
+        // Calculate new position for enemy
         const newPosX = enemyState.position.x + enemyState.velocity.x * deltaTime;
         const newPosZ = enemyState.position.z + enemyState.velocity.z * deltaTime;
 
+        // Define map boundaries (half-width and half-depth of the ground plane)
+        const mapBoundary = 25; // Half of the 50x50 ground size
+
         // Simple collision detection with the tree
-        const treeRadius = 4; // Approximate radius of tree base
+        const treeRadius = 0.7; // Adjusted to match actual tree trunk radius
         const distanceToTree = Math.sqrt(newPosX * newPosX + newPosZ * newPosZ);
 
-        // Only update position if not colliding with tree
-        if (distanceToTree > treeRadius) {
+        // Only update position if not colliding with tree AND within map boundaries
+        if (distanceToTree > treeRadius &&
+            Math.abs(newPosX) < mapBoundary &&
+            Math.abs(newPosZ) < mapBoundary) {
             enemyState.position.x = newPosX;
             enemyState.position.z = newPosZ;
             enemyModel.position.copy(enemyState.position);
@@ -603,4 +711,368 @@ function animate() {
 }
 
 animate();
+
+// Add file upload UI
+function createUploadUI() {
+    const uploadContainer = document.createElement('div');
+    uploadContainer.className = 'upload-container';
+    uploadContainer.innerHTML = `
+        <div class="upload-box" id="upload-box">
+            <p>Drag & Drop your 3D model here<br>or</p>
+            <input type="file" id="file-input" accept=".glb,.gltf">
+            <label for="file-input">Select File</label>
+            <p class="supported-formats">Supported formats: GLB, GLTF</p>
+        </div>
+    `;
+
+    document.body.appendChild(uploadContainer);
+
+    setupUploadListeners();
+}
+
+// Set up event listeners for file upload
+function setupUploadListeners() {
+    const uploadBox = document.getElementById('upload-box');
+    const fileInput = document.getElementById('file-input');
+
+    // Highlight drop area when file is dragged over it
+    ['dragenter', 'dragover'].forEach(eventName => {
+        uploadBox.addEventListener(eventName, e => {
+            e.preventDefault();
+            uploadBox.classList.add('highlight');
+        }, false);
+    });
+
+    // Remove highlight when file leaves the drop area
+    ['dragleave', 'drop'].forEach(eventName => {
+        uploadBox.addEventListener(eventName, e => {
+            e.preventDefault();
+            uploadBox.classList.remove('highlight');
+        }, false);
+    });
+
+    // Handle file drop
+    uploadBox.addEventListener('drop', e => {
+        e.preventDefault();
+        const file = e.dataTransfer.files[0];
+        if (file && isValidModelFile(file)) {
+            loadCustomModel(file);
+        } else {
+            alert('Please upload a .glb or .gltf file');
+        }
+    }, false);
+
+    // Handle file selection via the input
+    fileInput.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (file && isValidModelFile(file)) {
+            loadCustomModel(file);
+        } else {
+            alert('Please upload a .glb or .gltf file');
+        }
+    }, false);
+}
+
+// Check if file is a valid 3D model format
+function isValidModelFile(file) {
+    const validExtensions = ['.glb', '.gltf'];
+    const fileName = file.name.toLowerCase();
+    return validExtensions.some(ext => fileName.endsWith(ext));
+}
+
+// Load custom model from user's file
+function loadCustomModel(file) {
+    debugLog('Loading custom model', file.name);
+
+    // Create a URL for the file
+    const url = URL.createObjectURL(file);
+
+    // Track the old models to ensure proper cleanup
+    const oldPlayerModel = playerModel;
+    const oldEnemyModel = enemyModel;
+
+    // Reset all animation states
+    playerAnimations = {};
+    enemyAnimations = {};
+    animationMap.player = {
+        IDLE: { clip: null, duration: 0 },
+        WALK: { clip: null, duration: 0 },
+        RUN: { clip: null, duration: 0 },
+        JUMP: { clip: null, duration: 0 },
+        ATTACK: { clip: null, duration: 0 }
+    };
+    animationMap.enemy = {
+        IDLE: { clip: null, duration: 0 },
+        WALK: { clip: null, duration: 0 },
+        RUN: { clip: null, duration: 0 },
+        JUMP: { clip: null, duration: 0 },
+        ATTACK: { clip: null, duration: 0 }
+    };
+
+    // First load for player
+    loader.load(
+        url,
+        // Success callback
+        (gltf) => {
+            debugLog('Custom model loaded successfully for player', gltf);
+
+            // Store player position and rotation before removing the old model
+            const playerPos = playerState.position.clone();
+            const playerRot = playerState.rotation.clone();
+
+            // Remove existing player model if it exists
+            if (oldPlayerModel) {
+                // Stop all animations before removing
+                if (playerMixer) {
+                    playerMixer.stopAllAction();
+                    playerMixer.uncacheRoot(oldPlayerModel);
+                }
+                scene.remove(oldPlayerModel);
+            }
+
+            // Player model setup
+            playerModel = gltf.scene;
+
+            // Set up model properties
+            playerModel.traverse((node) => {
+                if (node.isMesh) {
+                    node.castShadow = true;
+                    node.receiveShadow = true;
+                }
+            });
+
+            // Apply scale to player model
+            playerModel.scale.set(characterScale, characterScale, characterScale);
+
+            // Apply rotation and position from saved values
+            playerModel.rotation.copy(playerRot);
+            playerModel.position.copy(playerPos);
+            scene.add(playerModel);
+
+            // Save current state
+            playerState.position.copy(playerPos);
+            playerState.rotation.copy(playerRot);
+            playerState.currentAnimation = 'NONE';
+
+            // Create a new animation mixer for the player
+            playerMixer = new THREE.AnimationMixer(playerModel);
+
+            // Process animations for player
+            processModelAnimations(gltf, 'player');
+
+            // Now load for the enemy
+            loader.load(
+                url,
+                // Success callback for enemy
+                (gltf) => {
+                    debugLog('Custom model loaded successfully for enemy', gltf);
+
+                    // Store enemy position and rotation before removing old model
+                    const enemyPos = enemyState.position.clone();
+                    const enemyRot = enemyState.rotation.clone();
+
+                    // Remove existing enemy model if it exists
+                    if (oldEnemyModel) {
+                        // Stop all animations before removing
+                        if (enemyMixer) {
+                            enemyMixer.stopAllAction();
+                            enemyMixer.uncacheRoot(oldEnemyModel);
+                        }
+                        scene.remove(oldEnemyModel);
+                    }
+
+                    // Enemy model setup
+                    enemyModel = gltf.scene;
+
+                    // Set up enemy model properties
+                    enemyModel.traverse((node) => {
+                        if (node.isMesh) {
+                            node.castShadow = true;
+                            node.receiveShadow = true;
+                        }
+                    });
+
+                    // Apply scale to enemy model
+                    enemyModel.scale.set(characterScale, characterScale, characterScale);
+
+                    // Apply rotation and position from saved values
+                    enemyModel.rotation.copy(enemyRot);
+                    enemyModel.position.copy(enemyPos);
+                    scene.add(enemyModel);
+
+                    // Save current state
+                    enemyState.position.copy(enemyPos);
+                    enemyState.rotation.copy(enemyRot);
+                    enemyState.currentAnimation = 'NONE';
+
+                    // Create a new animation mixer for the enemy
+                    enemyMixer = new THREE.AnimationMixer(enemyModel);
+
+                    // Process animations for enemy
+                    processModelAnimations(gltf, 'enemy');
+
+                    // Clean up the object URL after both models are set up
+                    URL.revokeObjectURL(url);
+
+                    const foundAnimations = Object.keys(playerAnimations).filter(key => playerAnimations[key] !== undefined);
+                    alert(`Model "${file.name}" loaded successfully!\nFound animations: ${foundAnimations.join(', ') || 'None'}`);
+                },
+                // Progress callback for enemy
+                (xhr) => {
+                    if (xhr.lengthComputable) {
+                        const percent = (xhr.loaded / xhr.total * 100).toFixed(2);
+                        debugLog(`Enemy model loading progress: ${percent}%`);
+                    }
+                },
+                // Error callback for enemy
+                (error) => {
+                    console.error('Error loading enemy model:', error);
+                    debugLog('ERROR loading enemy model', error);
+                    URL.revokeObjectURL(url);
+                }
+            );
+        },
+        // Progress callback for player
+        (xhr) => {
+            if (xhr.lengthComputable) {
+                const percent = (xhr.loaded / xhr.total * 100).toFixed(2);
+                debugLog(`Player model loading progress: ${percent}%`);
+            }
+        },
+        // Error callback for player
+        (error) => {
+            console.error('Error loading player model:', error);
+            debugLog('ERROR loading player model', error);
+            alert('Error loading model. Please try a different file.');
+            URL.revokeObjectURL(url);
+        }
+    );
+}
+
+// Helper function to process animations for both player and enemy
+function processModelAnimations(gltf, characterType) {
+    const info = characterType === 'player' ?
+        { animations: playerAnimations, map: animationMap.player, mixer: playerMixer, state: playerState } :
+        { animations: enemyAnimations, map: animationMap.enemy, mixer: enemyMixer, state: enemyState };
+
+    let hasFoundValidAnimation = false;
+
+    // Process animations - only accept those with specific names
+    gltf.animations.forEach((clip) => {
+        const name = clip.name.toUpperCase();
+
+        // Check for IDLE animations
+        if (name.includes('IDLE') || name.includes('STOPPED')) {
+            info.map.IDLE.clip = clip;
+            info.map.IDLE.duration = clip.duration;
+            info.animations.IDLE = info.mixer.clipAction(clip);
+            info.animations.IDLE.setLoop(THREE.LoopRepeat);
+            if (characterType === 'player') {
+                debugLog(`Found IDLE animation for ${characterType}: "${clip.name}"`);
+            }
+            hasFoundValidAnimation = true;
+        }
+        // Check for WALK animations
+        else if (name.includes('WALK')) {
+            info.map.WALK.clip = clip;
+            info.map.WALK.duration = clip.duration;
+            info.animations.WALK = info.mixer.clipAction(clip);
+            info.animations.WALK.setLoop(THREE.LoopRepeat);
+            if (characterType === 'player') {
+                debugLog(`Found WALK animation for ${characterType}: "${clip.name}"`);
+            }
+            hasFoundValidAnimation = true;
+        }
+        // Check for RUN animations
+        else if (name.includes('RUN') || name.includes('SPRINT')) {
+            info.map.RUN.clip = clip;
+            info.map.RUN.duration = clip.duration;
+            info.animations.RUN = info.mixer.clipAction(clip);
+            info.animations.RUN.setLoop(THREE.LoopRepeat);
+            if (characterType === 'player') {
+                debugLog(`Found RUN animation for ${characterType}: "${clip.name}"`);
+            }
+            hasFoundValidAnimation = true;
+        }
+        // Check for JUMP animations
+        else if (name.includes('JUMP') || name.includes('LEAP')) {
+            info.map.JUMP.clip = clip;
+            info.map.JUMP.duration = clip.duration;
+            info.animations.JUMP = info.mixer.clipAction(clip);
+            info.animations.JUMP.setLoop(THREE.LoopOnce);
+            info.animations.JUMP.clampWhenFinished = true;
+            if (characterType === 'player') {
+                debugLog(`Found JUMP animation for ${characterType}: "${clip.name}"`);
+            }
+            hasFoundValidAnimation = true;
+        }
+        // Check for ATTACK animations
+        else if (name.includes('ATTACK') || name.includes('SHOOT') || name.includes('FIRE')) {
+            info.map.ATTACK.clip = clip;
+            info.map.ATTACK.duration = clip.duration;
+            info.animations.ATTACK = info.mixer.clipAction(clip);
+            info.animations.ATTACK.setLoop(THREE.LoopOnce);
+            info.animations.ATTACK.clampWhenFinished = true;
+            if (characterType === 'player') {
+                debugLog(`Found ATTACK animation for ${characterType}: "${clip.name}"`);
+            }
+            hasFoundValidAnimation = true;
+        }
+    });
+
+    // If we found any valid animations, play IDLE if available
+    if (hasFoundValidAnimation) {
+        if (info.animations.IDLE) {
+            // Make sure nothing else is playing
+            info.mixer.stopAllAction();
+
+            // Play the IDLE animation
+            info.animations.IDLE.play();
+            info.state.currentAnimation = 'IDLE';
+            if (characterType === 'player') {
+                debugLog(`Started playing IDLE animation for ${characterType}`);
+            }
+        } else if (characterType === 'player') {
+            // No IDLE found but we have other animations - don't auto-play anything
+            debugLog('No IDLE animation found. Model loaded without automatic animation.');
+        }
+    } else if (characterType === 'player') {
+        // No valid animations found at all
+        debugLog('No valid animations found in model. The model will be static.');
+    }
+}
+
+// Create the upload UI
+createUploadUI();
+
+// Fix the jump function to work properly with physics
+function performJump(character) {
+    const info = character === 'player' ?
+        { state: playerState, animations: playerAnimations, map: animationMap.player } :
+        { state: enemyState, animations: enemyAnimations, map: animationMap.enemy };
+
+    // If no jump animation or already jumping, don't do anything
+    if (info.state.isJumping) {
+        if (character === 'player') {
+            debugLog(`Cannot perform jump - already jumping`);
+        }
+        return;
+    }
+
+    // Set the jumping state
+    info.state.isJumping = true;
+
+    // Set initial jump velocity
+    info.state.velocity.y = info.state.jumpSpeed;
+
+    // Play jump animation if it exists
+    if (info.animations.JUMP) {
+        setAnimation(character, 'JUMP');
+    }
+
+    // Log the jump
+    if (character === 'player') {
+        debugLog(`Player is jumping with velocity: ${info.state.velocity.y}`);
+    }
+}
 

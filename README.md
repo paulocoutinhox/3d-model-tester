@@ -9,6 +9,9 @@ A simple Three.js application for testing 3D models with animations. This projec
 - Basic character controls with animations
 - Simple enemy AI behavior
 - Environment with lighting and shadows
+- Custom model upload functionality (drag & drop or file selection)
+- Running, jumping, and attack animations
+- Collision detection with environment objects
 
 ## Installation
 
@@ -47,9 +50,28 @@ npm run preview
 - **S**: Move backward
 - **A**: Rotate left
 - **D**: Rotate right
-- **Space**: Attack
+- **Space**: Jump
+- **Shift**: Run (hold while moving)
+- **F** or **Mouse Click**: Attack
 
-## Using Your Own Character Model
+## Using Custom 3D Models
+
+You can test your own 3D models directly in the application:
+
+1. Use the upload box in the top-right corner of the screen
+2. Either drag & drop your model file or click "Select File" to choose a file
+3. Supported formats: GLB and GLTF
+
+The application will automatically detect and map animations from your model if they include any of the following in their names:
+- **IDLE** or **STOPPED**: Used for the idle animation
+- **WALK**: Used for walking
+- **RUN** or **SPRINT**: Used for running
+- **JUMP** or **LEAP**: Used for jumping
+- **ATTACK**, **SHOOT**, or **FIRE**: Used for attack animations
+
+After a successful upload, the application will show you which animations were detected in your model.
+
+## Using Your Own Character Model (Static Files)
 
 The player character model is located at `public/models/character.glb`. To use your own model:
 
@@ -78,6 +100,12 @@ You can modify several aspects of the character and environment in the code:
 - You can adjust animation speeds, transitions, and blending in the animation controller code
 - Animation names can be remapped to match your model's specific animation naming conventions
 
+### Physics Parameters
+
+- Gravity: The jump physics use a simplified gravity model
+- Jump Height: Controlled by the `jumpSpeed` parameter in the player state
+- Movement Speed: Separate values for walking (`moveSpeed`) and running (`runSpeed`)
+
 ### Debug Options
 
 The code includes a debugging system that logs model information to the console:
@@ -90,7 +118,7 @@ The code includes a debugging system that logs model information to the console:
 
 - Your model should be in GLB format with embedded animations
 - For best results, the model should be Y-up oriented
-- Animations should be named consistently (IDLE, WALK, ATTACK)
+- Animations should be named consistently for automatic detection
 
 ## Troubleshooting
 
