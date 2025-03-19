@@ -99,3 +99,13 @@ If your model doesn't appear or animate correctly:
 - Verify your model has the required animations
 - Ensure your model is properly rigged if using animations
 - Make sure the scale of your model is appropriate
+
+## Screenshot
+
+<img width="280" src="https://github.com/paulocoutinhox/3d-model-tester/blob/main/extras/images/screenshot.png?raw=true">
+
+## License
+
+[MIT](http://opensource.org/licenses/MIT)
+
+Copyright (c) 2025, Paulo Coutinho
