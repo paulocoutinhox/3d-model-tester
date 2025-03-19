@@ -79,14 +79,18 @@ After a successful upload, the application will show you which animations were d
 
 The player character model is located at `public/models/character.glb`. To use your own model:
 
-1. Prepare your GLB file with the following animations:
-   - IDLE: A standing idle animation
-   - WALK: A walking animation
-   - ATTACK: An attack animation
+1. Prepare your GLB file with animations. The application supports the following animation types:
+   - **IDLE** or **STOPPED**: For standing still
+   - **WALK**: For walking movement
+   - **RUN** or **SPRINT**: For running movement (optional)
+   - **JUMP** or **LEAP**: For jumping action (optional)
+   - **ATTACK**, **SHOOT**, or **FIRE**: For attack actions
 
 2. Replace the existing `character.glb` file in the `public/models/` directory with your own model file (keep the same filename).
 
-3. If your model has different animation names or requirements, you may need to adjust the animation mapping in the source code.
+3. The application will automatically detect animations based on their names. Make sure your animation names include the keywords mentioned above for proper detection.
+
+4. If your model has different animation names or requirements, you may need to adjust the animation mapping in the source code.
 
 ## Customization Options
 
