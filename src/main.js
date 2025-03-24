@@ -151,7 +151,7 @@ loader.load('models/character.glb',
         let hasDraco = false;
         if (gltf.parser && gltf.parser.extensions) {
             hasDraco = !!gltf.parser.extensions.KHR_draco_mesh_compression;
-            debugLog('Model uses Draco compression?', hasDraco);
+            debugLog('Model uses Draco compression? ' + (hasDraco ? 'YES': 'NO'));
         }
 
         // Player model setup
